@@ -26,6 +26,27 @@ A modern B2B SaaS-style CRM dashboard for managing hotel outreach and sales acti
 npm install
 ```
 
+### Database Setup
+
+1. **Create PostgreSQL database:**
+   ```bash
+   psql -U postgres -c "CREATE DATABASE marketing_db;"
+   psql -U postgres -d marketing_db -f database/schema.sql
+   ```
+
+2. **Configure environment variables:**
+   ```bash
+   cp .env.example .env.local
+   ```
+   
+   Edit `.env.local` with your PostgreSQL credentials:
+   ```env
+   DATABASE_URL=postgresql://username:password@localhost:5432/marketing_db
+   ```
+
+3. **Test database connection:**
+   Visit `http://localhost:3000/api/health/db` after starting the server
+
 ### Development
 
 ```bash

@@ -6,8 +6,6 @@ import { Button } from '@/components/ui/Button'
 import { useImportHotels } from '@/hooks/useMockQueries'
 import { Hotel } from '@/lib/types'
 import { getRegions } from '@/lib/mockData'
-import * as XLSX from 'xlsx'
-import Papa from 'papaparse'
 
 type ImportStep = 1 | 2 | 3
 
@@ -49,30 +47,79 @@ export default function ImportPage() {
 
     try {
       if (fileExtension === 'csv') {
-        // Parse CSV file
-        Papa.parse(file, {
-          header: true,
-          skipEmptyLines: true,
-          complete: (results) => {
-            if (results.data && results.data.length > 0) {
-              const columns = Object.keys(results.data[0] as object)
-              const data = results.data.map((row: any) => columns.map((col) => row[col] || ''))
-              setFileColumns(columns)
-              setFileData(data)
-            } else {
-              alert('CSV file appears to be empty or invalid')
+        // Parse CSV file - dynamically load papaparse
+        try {
+          // Use require with variable to avoid static analysis
+          let Papa: any
+          try {
+            const papaparseName = 'papaparse'
+            const PapaModule = require(papaparseName)
+            Papa = PapaModule.default || PapaModule
+          } catch (requireError: any) {
+            if (requireError.code === 'MODULE_NOT_FOUND') {
+              alert('CSV file support requires the papaparse package. Please install it with: npm install papaparse')
+              return
             }
-          },
-          error: (error) => {
+            throw requireError
+          }
+          
+          if (!Papa || typeof Papa.parse !== 'function') {
+            alert('papaparse package is not properly installed. Please run: npm install papaparse')
+            return
+          }
+          
+          Papa.parse(file, {
+            header: true,
+            skipEmptyLines: true,
+            complete: (results) => {
+              if (results.data && results.data.length > 0) {
+                const columns = Object.keys(results.data[0] as object)
+                const data = results.data.map((row: any) => columns.map((col) => row[col] || ''))
+                setFileColumns(columns)
+                setFileData(data)
+              } else {
+                alert('CSV file appears to be empty or invalid')
+              }
+            },
+            error: (error) => {
+              console.error('CSV parsing error:', error)
+              alert('Error parsing CSV file. Please check the file format.')
+            },
+          })
+        } catch (error: any) {
+          if (error.message && error.message.includes('not installed')) {
+            alert('CSV file support requires the papaparse package. Please install it with: npm install papaparse')
+          } else {
             console.error('CSV parsing error:', error)
             alert('Error parsing CSV file. Please check the file format.')
-          },
-        })
+          }
+          return
+        }
       } else if (fileExtension === 'xlsx' || fileExtension === 'xls') {
-        // Parse Excel file
+        // Parse Excel file - dynamically import xlsx
         const reader = new FileReader()
-        reader.onload = (e) => {
+        reader.onload = async (e) => {
           try {
+            // Use dynamic import for client-side code
+            let XLSX: any
+            try {
+              // Dynamic import works in browser/client-side code
+              const xlsxModule = await import('xlsx')
+              XLSX = xlsxModule.default || xlsxModule
+            } catch (importError: any) {
+              console.error('Failed to import xlsx:', importError)
+              if (importError.message && importError.message.includes('Cannot find module')) {
+                alert('Excel file support requires the xlsx package. Please install it with: npm install xlsx and restart the dev server.')
+                return
+              }
+              throw importError
+            }
+            
+            if (!XLSX || typeof XLSX.read !== 'function') {
+              alert('xlsx package is not properly installed. Please run: npm install xlsx and restart the dev server.')
+              return
+            }
+            
             const arrayBuffer = new Uint8Array(e.target?.result as ArrayBuffer)
             const workbook = XLSX.read(arrayBuffer, { type: 'array' })
             
@@ -108,9 +155,13 @@ export default function ImportPage() {
 
             setFileColumns(columns)
             setFileData(parsedData)
-          } catch (error) {
-            console.error('Excel parsing error:', error)
-            alert('Error parsing Excel file. Please check the file format.')
+          } catch (error: any) {
+            if (error.message && error.message.includes('not installed')) {
+              alert('Excel file support requires the xlsx package. Please install it with: npm install xlsx')
+            } else {
+              console.error('Excel parsing error:', error)
+              alert('Error parsing Excel file. Please check the file format.')
+            }
           }
         }
         reader.readAsArrayBuffer(file)
@@ -343,7 +394,17 @@ export default function ImportPage() {
               )}
 
               <div className="flex justify-end">
-                <Button onClick={() => fileName && fileColumns.length > 0 && setStep(2)} disabled={!fileName || fileColumns.length === 0}>
+                <Button 
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    if (fileName && fileColumns.length > 0) {
+                      setStep(2)
+                    }
+                  }} 
+                  disabled={!fileName || fileColumns.length === 0}
+                  type="button"
+                >
                   Next
                 </Button>
               </div>
@@ -441,12 +502,30 @@ export default function ImportPage() {
               </div>
 
               <div className="flex justify-between">
-                <Button onClick={() => setStep(1)} variant="outline">
+                <Button 
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    setStep(1)
+                  }} 
+                  variant="outline"
+                  type="button"
+                >
                   Back
                 </Button>
                 <Button
-                  onClick={() => setStep(3)}
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    const hasHotelNameMapping = Object.values(columnMapping).some((v) => 
+                      v && (v.toLowerCase().includes('hotel') || v.toLowerCase().includes('name'))
+                    )
+                    if (hasHotelNameMapping) {
+                      setStep(3)
+                    }
+                  }}
                   disabled={Object.values(columnMapping).filter((v) => v && (v.toLowerCase().includes('hotel') || v.toLowerCase().includes('name'))).length === 0}
+                  type="button"
                 >
                   Next
                 </Button>
@@ -528,10 +607,26 @@ export default function ImportPage() {
                   </div>
 
                   <div className="flex justify-between">
-                    <Button onClick={() => setStep(2)} variant="outline">
+                    <Button 
+                      onClick={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        setStep(2)
+                      }} 
+                      variant="outline"
+                      type="button"
+                    >
                       Back
                     </Button>
-                    <Button onClick={handleImport} disabled={importMutation.isPending}>
+                    <Button 
+                      onClick={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        handleImport()
+                      }} 
+                      disabled={importMutation.isPending}
+                      type="button"
+                    >
                       {importMutation.isPending ? 'Importing...' : `Import ${fileData.length} hotels`}
                     </Button>
                   </div>

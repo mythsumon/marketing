@@ -4,13 +4,14 @@ import { useState } from 'react'
 import { Header } from '@/components/layout/Header'
 import { Button } from '@/components/ui/Button'
 import { useRegions, useCreateRegion, useUpdateRegion, useDeleteRegion } from '@/hooks/useRegions'
-import { getHotels } from '@/lib/mockData'
+import { useHotelList } from '@/hooks/useMockQueries'
 
 export default function RegionsPage() {
   const [editingRegion, setEditingRegion] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
   const [newRegion, setNewRegion] = useState('')
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null)
+  const [showAddForm, setShowAddForm] = useState(false)
 
   const { data: regions, isLoading } = useRegions()
   const createRegionMutation = useCreateRegion()
@@ -18,13 +19,34 @@ export default function RegionsPage() {
   const deleteRegionMutation = useDeleteRegion()
 
   const handleCreate = async () => {
-    if (!newRegion.trim()) return
-    if (regions?.includes(newRegion.trim())) {
+    const regionToAdd = newRegion.trim()
+    
+    if (!regionToAdd) {
+      alert('Please enter a region name')
+      return
+    }
+    
+    if (regions?.includes(regionToAdd)) {
       alert('Region already exists')
       return
     }
-    await createRegionMutation.mutateAsync(newRegion.trim())
-    setNewRegion('')
+    
+    console.log('Creating region:', regionToAdd)
+    
+    try {
+      const result = await createRegionMutation.mutateAsync(regionToAdd)
+      console.log('Region created successfully:', result)
+      setNewRegion('')
+      // Close modal after successful creation
+      setTimeout(() => {
+        setShowAddForm(false)
+      }, 500)
+      // The mutation will automatically invalidate queries and refresh the list
+    } catch (error: any) {
+      console.error('Error creating region:', error)
+      const errorMessage = error?.message || error?.error || 'Unknown error occurred'
+      // Don't close modal on error, let user see the error message
+    }
   }
 
   const handleStartEdit = (region: string) => {
@@ -55,10 +77,13 @@ export default function RegionsPage() {
     setEditValue('')
   }
 
+  // Get all hotels to check region usage
+  const { data: allHotelsData } = useHotelList({}, 1, 10000) // Get all hotels
+  const allHotels = allHotelsData?.data || []
+
   const handleDelete = async (region: string) => {
     // Check if any hotels use this region
-    const hotels = getHotels()
-    const hotelsInRegion = hotels.filter((h) => h.region === region)
+    const hotelsInRegion = allHotels.filter((h) => h.region === region)
     
     if (hotelsInRegion.length > 0) {
       alert(
@@ -73,8 +98,7 @@ export default function RegionsPage() {
   }
 
   const getHotelCount = (region: string) => {
-    const hotels = getHotels()
-    return hotels.filter((h) => h.region === region).length
+    return allHotels.filter((h) => h.region === region).length
   }
 
   return (
@@ -82,23 +106,18 @@ export default function RegionsPage() {
       <Header title="Regions Management" breadcrumb={['Home', 'Regions']} />
 
       <div className="p-6 max-w-4xl mx-auto">
-        {/* Create New Region */}
+        {/* Header with Add Button */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Add New Region</h2>
-          <div className="flex gap-3">
-            <input
-              type="text"
-              value={newRegion}
-              onChange={(e) => setNewRegion(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && handleCreate()}
-              placeholder="Enter region name"
-              className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-            />
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-gray-900">Regions Management</h2>
             <Button
-              onClick={handleCreate}
-              disabled={!newRegion.trim() || createRegionMutation.isPending}
+              onClick={() => {
+                setNewRegion('')
+                setShowAddForm(true)
+              }}
+              variant="primary"
             >
-              {createRegionMutation.isPending ? 'Adding...' : 'Add Region'}
+              + Add Region
             </Button>
           </div>
         </div>
@@ -168,6 +187,84 @@ export default function RegionsPage() {
             <div className="text-center py-8 text-gray-500">No regions found</div>
           )}
         </div>
+
+        {/* Add Region Modal */}
+        {showAddForm && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Add New Region</h3>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Region Name
+                  </label>
+                  <input
+                    type="text"
+                    value={newRegion}
+                    onChange={(e) => setNewRegion(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && newRegion.trim() && !createRegionMutation.isPending) {
+                        e.preventDefault()
+                        handleCreate()
+                      }
+                    }}
+                    placeholder="Enter region name"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                    disabled={createRegionMutation.isPending}
+                    autoFocus
+                  />
+                </div>
+                
+                {createRegionMutation.isError && (
+                  <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+                    <p className="text-sm text-red-800 font-medium">Error:</p>
+                    <p className="text-sm text-red-600 mt-1">
+                      {createRegionMutation.error?.message || 'Failed to add region'}
+                    </p>
+                  </div>
+                )}
+                
+                {createRegionMutation.isSuccess && (
+                  <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+                    <p className="text-sm text-green-800">✓ Region added successfully!</p>
+                  </div>
+                )}
+                
+                <div className="flex justify-end gap-3">
+                  <Button
+                    onClick={() => {
+                      setShowAddForm(false)
+                      setNewRegion('')
+                    }}
+                    variant="outline"
+                    disabled={createRegionMutation.isPending}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      if (newRegion.trim() && !createRegionMutation.isPending) {
+                        handleCreate().then(() => {
+                          // Close modal on success
+                          if (!createRegionMutation.isError) {
+                            setTimeout(() => {
+                              setShowAddForm(false)
+                              setNewRegion('')
+                            }, 1000)
+                          }
+                        })
+                      }
+                    }}
+                    disabled={!newRegion.trim() || createRegionMutation.isPending}
+                    variant="primary"
+                  >
+                    {createRegionMutation.isPending ? 'Adding...' : 'Add Region'}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Delete Confirmation Modal */}
         {showDeleteConfirm && (
